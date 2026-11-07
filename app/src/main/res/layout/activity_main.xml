@@ -5,7 +5,7 @@
 
     <Button android:id="@+id/btnAccessibility" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="1. Cấp quyền Trợ năng" />
 
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="Chọn Game từ danh sách:" android:textStyle="bold"/>
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="Chọn Game (Tất cả App):" android:textStyle="bold"/>
     
     <Spinner
         android:id="@+id/spinnerApps"
@@ -14,14 +14,13 @@
         android:layout_marginTop="8dp"
         android:backgroundTint="#FF5722"/>
 
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Hoặc tự nhập Package Name:" android:textStyle="bold"/>
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Hoặc nhập tay Package Name:" android:textStyle="bold"/>
     
-    <!-- Ô nhập tay Package Name -->
     <EditText
         android:id="@+id/edtPackage"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Ví dụ: com.hortor.juliancysj"
+        android:hint="com.hortor.juliancysj"
         android:inputType="text"
         android:layout_marginTop="8dp"/>
 
