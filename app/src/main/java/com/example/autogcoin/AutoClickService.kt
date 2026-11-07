@@ -1,4 +1,4 @@
-package com.example.autogcoin
+package com.example.autogcoin // Sếp nhớ đổi lại package cho khớp với project của sếp
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
@@ -9,10 +9,10 @@ import android.content.IntentFilter
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
+import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.content.ContextCompat
-import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,23 +23,28 @@ import kotlinx.coroutines.launch
 class AutoClickService : AccessibilityService() {
 
     private var isRunning = false
-    private var config: GistConfig? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var gamePackage = "" 
+    
+    // CẤU HÌNH
+    private var accountCount = 0
+    private val maxAccounts = 5
+    private val gamePackage = "com.hortor.juliancysj"
+    private val protonVpnPackage = "ch.protonvpn.android"
+    private val mainAccountId = "49718334" // ID ACC CHÍNH CỦA SẾP
+    
+    private val mailManager = TempMailManager()
+    private var isProcessing = false 
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 "START_AUTO_CLICK" -> {
-                    loadConfig()
                     if (!isRunning) {
                         isRunning = true
-                        startSuperAutomation()
+                        startMasterCycle()
                     }
                 }
-                "STOP_AUTO_CLICK" -> {
-                    isRunning = false
-                }
+                "STOP_AUTO_CLICK" -> isRunning = false
             }
         }
     }
@@ -57,147 +62,248 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    private fun loadConfig() {
-        val prefs = getSharedPreferences("AutoConfig", MODE_PRIVATE)
-        gamePackage = prefs.getString("target_package", "") ?: ""
-        
-        val json = prefs.getString("config_json", null)
-        if (json != null) {
-            config = Gson().fromJson(json, GistConfig::class.java)
-        }
-    }
-
-    private fun startSuperAutomation() {
+    private fun startMasterCycle() {
         serviceScope.launch {
-            while (isRunning) {
-                try {
-                    val root = rootInActiveWindow
-                    val currentPackage = root?.packageName?.toString() ?: ""
-
-                    // Chặn chuyển hướng
-                    if (currentPackage == "com.android.vending" || currentPackage.contains("browser") || currentPackage.contains("chrome")) {
-                        performGlobalAction(GLOBAL_ACTION_BACK)
-                        delay(1000)
-                        continue
+            if (accountCount < maxAccounts) {
+                // 1. Tạo Email 10 phút
+                mailManager.createTempEmail { success, _ ->
+                    if (success) {
+                        // 2. Fake VPN
+                        toggleProtonVPN()
                     }
-
-                    if (currentPackage == gamePackage && gamePackage.isNotEmpty()) {
-                        handleGameScreen(root)
-                    } else if (gamePackage.isNotEmpty()) {
-                        // Nếu văng ra ngoài, tự động mở lại game
-                        performGlobalAction(GLOBAL_ACTION_HOME)
-                        delay(2000)
-                        val launchIntent = packageManager.getLaunchIntentForPackage(gamePackage)
-                        launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(launchIntent)
-                    }
-                } catch (e: Exception) { }
-                delay(1500) // Quét mỗi 1.5s
+                }
             }
         }
     }
 
-    private suspend fun handleGameScreen(root: AccessibilityNodeInfo) {
-        // 1. Ưu tiên bấm nút "Nhận GCoins" (Nút cam trong ảnh của sếp)
-        // Tìm cả chữ "Nhận" để chắc chắn bắt trúng
-        if (clickNodeByText(root, "Nhận GCoins") || clickNodeByText(root, "Nhận Gcoin") || clickNodeByText(root, "Nhận")) {
-            delay(2000) // Đợi video chạy
+    private fun toggleProtonVPN() {
+        val intent = packageManager.getLaunchIntentForPackage(protonVpnPackage)
+        intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+    }
+
+    private fun openGame() {
+        val intent = packageManager.getLaunchIntentForPackage(gamePackage)
+        intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (!isRunning || event == null) return
+        val root = rootInActiveWindow ?: return
+        val pkg = event.packageName?.toString() ?: return
+
+        // Chặn chuyển hướng
+        if (pkg == "com.android.vending" || pkg.contains("browser")) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
             return
         }
 
-        // 2. Tìm nút "Xem QC" hoặc "10~1000" ở màn hình ngoài
-        if (clickNodeByText(root, "10~1000") || clickNodeByText(root, "Phần thưởng từ QC") || clickNodeByText(root, "Xem QC")) {
+        // Xử lý VPN
+        if (pkg == protonVpnPackage) {
+            handleProtonVPN(root)
+            return
+        }
+
+        // Xử lý trong Game
+        if (pkg == gamePackage) {
+            handleGameScreen(root)
+        }
+    }
+
+    private fun handleProtonVPN(root: AccessibilityNodeInfo) {
+        if (isProcessing) return
+        isProcessing = true
+        serviceScope.launch {
+            if (clickNodeByText(root, "Disconnect") || clickNodeByText(root, "Ngắt kết nối")) {
+                delay(2000)
+            }
+            clickNodeByText(rootInActiveWindow, "Connect")
+            clickNodeByText(rootInActiveWindow, "Quick Connect")
+            delay(4000)
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            openGame()
+            isProcessing = false
+        }
+    }
+
+    private fun handleGameScreen(root: AccessibilityNodeInfo) {
+        if (isProcessing) return
+
+        // 1. ĐĂNG KÝ TỰ ĐỘNG
+        if (findNode(root, "Đăng ký") != null || findNode(root, "Register") != null) {
+            isProcessing = true
+            serviceScope.launch {
+                clickNodeByText(root, "Đăng ký")
+                delay(1000)
+                clickNodeByText(root, "Đăng ký bằng Email")
+                delay(1500)
+                fillAllEditTexts(rootInActiveWindow)
+                clickNodeByText(rootInActiveWindow, "Tạo tài khoản")
+                delay(8000)
+                isProcessing = false
+            }
+            return
+        }
+
+        // 2. NHẬP MÃ OTP
+        if (findNode(root, "Nhập mã") != null || findNode(root, "OTP") != null) {
+            isProcessing = true
+            serviceScope.launch {
+                var retry = 0
+                while (retry < 10) { 
+                    mailManager.fetchOTP { otp ->
+                        if (otp != null) {
+                            serviceScope.launch {
+                                val editTexts = mutableListOf<AccessibilityNodeInfo>()
+                                findEditTextsRecursively(rootInActiveWindow, editTexts)
+                                if(editTexts.isNotEmpty()) fillTextToSpecificNode(editTexts[0], otp)
+                                clickNodeByText(rootInActiveWindow, "Xác nhận")
+                                isProcessing = false
+                            }
+                        }
+                    }
+                    delay(3000)
+                    retry++
+                }
+                isProcessing = false
+            }
+            return
+        }
+
+        // 3. HẾT LƯỢT -> CHUYỂN COIN -> ĐĂNG XUẤT
+        if (findNode(root, "Đã đạt giới hạn") != null || findNode(root, "Hết lượt") != null) {
+            isProcessing = true
+            serviceScope.launch {
+                // Chuyển coin (Số dư -> Chuyển -> Nhập ID)
+                navigateToTransfer(root)
+                delay(3000)
+                
+                // Đăng xuất (Cài đặt -> Đăng xuất)
+                navigateToLogout()
+                delay(3000)
+                
+                // Tăng Acc và chạy lại chu trình
+                accountCount++
+                isProcessing = false
+                if (accountCount < maxAccounts) {
+                    startMasterCycle()
+                }
+            }
+            return
+        }
+
+        // 4. CÀY COIN (Theo giao diện mới)
+        if (clickNodeByText(root, "Nhận GCoins sau QC")) {
             delay(2000)
             return
         }
-
-        // 3. Tìm nút tắt Quảng Cáo (Nếu đang xem QC)
-        val adCloseKeywords = listOf("X", "Skip", "Bỏ qua", "Đóng", "Claim", "Tiếp tục", "Close")
+        
+        if (clickNodeByText(root, "Nhận GCoins")) {
+            delay(2000)
+            return
+        }
+        
+        // Tắt quảng cáo
+        val adCloseKeywords = listOf("X", "Skip", "Bỏ qua", "Đóng", "Claim")
         for (keyword in adCloseKeywords) {
-            if (clickNodeByText(root, keyword)) {
+            if (clickNodeByText(root, keyword)) return
+        }
+    }
+
+    // 💸 LUỒNG CHUYỂN COIN
+    private suspend fun navigateToTransfer(root: AccessibilityNodeInfo) {
+        if (clickNodeByText(root, "Số dư") || clickNodeByText(root, "Ví")) {
+            delay(2000)
+            if (clickNodeByText(rootInActiveWindow, "Chuyển")) {
+                delay(2000)
+                val currentRoot = rootInActiveWindow
+                if (currentRoot != null) {
+                    inputTextToField(currentRoot, "ID", mainAccountId)
+                    inputTextToField(currentRoot, "Số lượng", "ALL")
+                    delay(1000)
+                    clickNodeByText(currentRoot, "Xác nhận")
+                    clickNodeByText(currentRoot, "Chuyển")
+                    delay(3000)
+                }
+            }
+        }
+    }
+
+    // 🚪 LUỒNG ĐĂNG XUẤT
+    private suspend fun navigateToLogout() {
+        if (clickNodeByText(rootInActiveWindow, "Cài đặt")) {
+            delay(2000)
+            if (clickNodeByText(rootInActiveWindow, "Đăng xuất")) {
+                delay(1000)
+                clickNodeByText(rootInActiveWindow, "Đồng ý")
+                clickNodeByText(rootInActiveWindow, "Xác nhận")
+                delay(2000)
+            }
+        }
+    }
+
+    // --- CÁC HÀM ĐIỀN FORM THÔNG MINH ---
+    private fun fillAllEditTexts(root: AccessibilityNodeInfo?) {
+        if (root == null) return
+        val editTexts = mutableListOf<AccessibilityNodeInfo>()
+        findEditTextsRecursively(root, editTexts)
+        
+        if (editTexts.isNotEmpty()) fillTextToSpecificNode(editTexts[0], mailManager.currentEmail)
+        if (editTexts.size > 1) fillTextToSpecificNode(editTexts[1], mailManager.currentPassword)
+        if (editTexts.size > 2) fillTextToSpecificNode(editTexts[2], mailManager.currentPassword)
+    }
+
+    private fun findEditTextsRecursively(node: AccessibilityNodeInfo?, list: MutableList<AccessibilityNodeInfo>) {
+        if (node == null) return
+        if (node.className == "android.widget.EditText") {
+            list.add(node)
+        }
+        for (i in 0 until node.childCount) {
+            findEditTextsRecursively(node.getChild(i), list)
+        }
+    }
+
+    private fun fillTextToSpecificNode(node: AccessibilityNodeInfo?, text: String) {
+        if (node == null) return
+        val arguments = Bundle()
+        arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+    }
+
+    private fun inputTextToField(root: AccessibilityNodeInfo?, hintText: String, textToType: String) {
+        if (root == null) return
+        val nodes = root.findAccessibilityNodeInfosByText(hintText)
+        for (node in nodes) {
+            if (node.className == "android.widget.EditText") {
+                fillTextToSpecificNode(node, textToType)
                 return
             }
         }
-
-        // 4. Tìm nút X "Tàng hình" (Góc trên bên phải)
-        if (clickTopRightHiddenButton(root)) {
-            return
-        }
     }
 
-    // 🌟 HÀM CLICK NÂNG CẤP: Tìm thấy chữ -> Bấm lệnh hệ thống -> Nếu xịt thì tự Tap vào tọa độ
+    private fun findNode(root: AccessibilityNodeInfo?, text: String): AccessibilityNodeInfo? {
+        return root?.findAccessibilityNodeInfosByText(text)?.firstOrNull()
+    }
+
     private fun clickNodeByText(root: AccessibilityNodeInfo?, text: String): Boolean {
-        if (root == null) return false
-        val nodes = root.findAccessibilityNodeInfosByText(text)
-        for (node in nodes) {
-            // Thử bấm bằng lệnh hệ thống trước (nhanh và nhẹ)
-            if (performSmartClick(node)) {
-                return true
-            }
-            // Nếu lệnh hệ thống thất bại (nút là ảnh, hoặc bị chặn), TAP VẬT LÝ VÀO TỌA ĐỘ
-            if (tapNodeCoordinates(node)) {
-                return true
-            }
-        }
-        return false
-    }
-
-    // Hàm mô phỏng ngón tay chạm vào giữa nút
-    private fun tapNodeCoordinates(node: AccessibilityNodeInfo): Boolean {
+        val node = findNode(root, text) ?: return false
+        var clickable = node
+        while (clickable != null && !clickable.isClickable) { clickable = clickable.parent }
+        
+        if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        
         val rect = Rect()
         node.getBoundsInScreen(rect)
         if (rect.width() > 0 && rect.height() > 0) {
-            val x = rect.centerX().toFloat()
-            val y = rect.centerY().toFloat()
-            val path = Path().apply { moveTo(x, y) }
-            val gesture = GestureDescription.Builder()
-                .addStroke(GestureDescription.StrokeDescription(path, 0, 100))
-                .build()
-            dispatchGesture(gesture, null, null)
+            val path = Path().apply { moveTo(rect.centerX().toFloat(), rect.centerY().toFloat()) }
+            dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 100)).build(), null, null)
             return true
         }
         return false
     }
 
-    private fun clickTopRightHiddenButton(root: AccessibilityNodeInfo?): Boolean {
-        if (root == null) return false
-        val screenWidth = resources.displayMetrics.widthPixels
-        val screenHeight = resources.displayMetrics.heightPixels
-
-        fun traverse(node: AccessibilityNodeInfo?): Boolean {
-            if (node == null) return false
-            val rect = Rect()
-            node.getBoundsInScreen(rect)
-
-            if (rect.right > screenWidth * 0.75 && rect.top < screenHeight * 0.25) {
-                if (node.isClickable && (node.className.contains("Button") || node.className.contains("Image"))) {
-                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    return true
-                }
-            }
-            for (i in 0 until node.childCount) {
-                if (traverse(node.getChild(i))) return true
-            }
-            return false
-        }
-        return traverse(root)
-    }
-
-    private fun performSmartClick(node: AccessibilityNodeInfo): Boolean {
-        var current = node
-        while (current != null) {
-            if (current.isClickable) {
-                val success = current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                if (success) return true
-            }
-            current = current.parent
-        }
-        return false
-    }
-
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() { isRunning = false }
-
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
