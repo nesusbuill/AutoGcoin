@@ -5,9 +5,8 @@
 
     <Button android:id="@+id/btnAccessibility" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="1. Cấp quyền Trợ năng" />
 
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="Chọn Game cần cày:" android:textSize="16sp" android:textStyle="bold"/>
-
-    <!-- Danh sách xổ xuống chứa các game trên máy -->
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="Chọn Game từ danh sách:" android:textStyle="bold"/>
+    
     <Spinner
         android:id="@+id/spinnerApps"
         android:layout_width="match_parent"
@@ -15,5 +14,16 @@
         android:layout_marginTop="8dp"
         android:backgroundTint="#FF5722"/>
 
-    <Button android:id="@+id/btnStart" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="2. Bắt đầu Cày Gcoin" />
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="Hoặc tự nhập Package Name:" android:textStyle="bold"/>
+    
+    <!-- Ô nhập tay Package Name -->
+    <EditText
+        android:id="@+id/edtPackage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Ví dụ: com.hortor.juliancysj"
+        android:inputType="text"
+        android:layout_marginTop="8dp"/>
+
+    <Button android:id="@+id/btnStart" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="2. Bắt đầu Cày Gcoin" android:backgroundTint="#4CAF50"/>
 </LinearLayout>
