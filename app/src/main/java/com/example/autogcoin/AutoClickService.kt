@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Path
+import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -26,14 +27,18 @@ class AutoClickService : AccessibilityService() {
     private var isRunning = false
     private var config: GistConfig? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var gamePackage = "com.hortor.juliancysj" // Fallback
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == "START_AUTO_CLICK") {
-                loadConfig()
-                if (!isRunning) {
+            when (intent?.action) {
+                "START_AUTO_CLICK" -> {
+                    loadConfig()
                     isRunning = true
-                    startAutoFlow()
+                    startSuperAutomation()
+                }
+                "STOP_AUTO_CLICK" -> {
+                    isRunning = false
                 }
             }
         }
@@ -41,7 +46,10 @@ class AutoClickService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        val filter = IntentFilter("START_AUTO_CLICK")
+        val filter = IntentFilter().apply {
+            addAction("START_AUTO_CLICK")
+            addAction("STOP_AUTO_CLICK")
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
         } else {
@@ -51,72 +59,122 @@ class AutoClickService : AccessibilityService() {
 
     private fun loadConfig() {
         val json = getSharedPreferences("AutoConfig", MODE_PRIVATE).getString("config_json", null)
-        config = if (json != null) Gson().fromJson(json, GistConfig::class.java) else {
-            GistConfig(
-                flow = listOf(
-                    FlowStep("click_text", "10~1000", delay_ms = 2000),
-                    FlowStep("click_text", "Nhận GCoins", delay_ms = 2000),
-                    FlowStep("wait_ad", delay_ms = 25000),
-                    FlowStep("close_ad", texts = listOf("X", "Skip", "Bỏ qua"))
-                )
-            )
+        if (json != null) {
+            val gistConfig = Gson().fromJson(json, GistConfig::class.java)
+            config = gistConfig
+            gamePackage = gistConfig.game_package.ifEmpty { gamePackage }
         }
     }
 
-    private fun startAutoFlow() {
+    // 🚀 VÒNG LẶP SIÊU TỰ ĐỘNG (CHẠY MỖI 1.5 GIÂY)
+    private fun startSuperAutomation() {
         serviceScope.launch {
-            while (isRunning) { 
+            while (isRunning) {
                 try {
-                    config?.flow?.forEach { step ->
-                        if (!isRunning) return@launch
-                        when (step.action) {
-                            "click_text" -> step.text?.let { clickNodeByText(it) }
-                            "wait_ad" -> delay(step.delay_ms)
-                            "close_ad" -> {
-                                var closed = false
-                                step.texts?.forEach { if (clickNodeByText(it)) closed = true }
-                                if (!closed) clickTopRightCorner()
-                            }
-                        }
-                        if (step.delay_ms > 0) delay(step.delay_ms)
+                    val root = rootInActiveWindow
+                    val currentPackage = root?.packageName?.toString() ?: ""
+
+                    // 1. CHẶN CHUYỂN HƯỚNG APP (Anti-Redirect)
+                    if (currentPackage == "com.android.vending" || currentPackage.contains("browser") || currentPackage.contains("chrome")) {
+                        performGlobalAction(GLOBAL_ACTION_BACK)
+                        delay(1000)
+                        continue
                     }
-                } catch (e: Exception) { /* Bỏ qua lỗi để vòng lặp chạy tiếp */ }
-                delay(2000) 
+
+                    // 2. NẾU ĐANG Ở TRONG GAME
+                    if (currentPackage == gamePackage) {
+                        handleGameScreen(root)
+                    } else {
+                        // Nếu đang lạc ở app khác (không phải CH Play), tự động về Home và mở lại game
+                        performGlobalAction(GLOBAL_ACTION_HOME)
+                        delay(2000)
+                        val launchIntent = packageManager.getLaunchIntentForPackage(gamePackage)
+                        launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(launchIntent)
+                    }
+                } catch (e: Exception) {
+                    // Bỏ qua lỗi để vòng lặp không bị chết
+                }
+                delay(1500) // Nhịp tim của hệ thống: Quét mỗi 1.5s
             }
         }
     }
 
-    private fun clickNodeByText(text: String): Boolean {
-        val root = rootInActiveWindow ?: return false
+    private fun handleGameScreen(root: AccessibilityNodeInfo) {
+        // Ưu tiên 1: Tìm nút nhận thưởng (Nếu đang ở màn hình chờ)
+        if (clickNodeByText(root, "10~1000") || clickNodeByText(root, "Phần thưởng từ QC") || clickNodeByText(root, "Xem QC")) {
+            delay(2000) // Chờ popup hiện lên
+            clickNodeByText(rootInActiveWindow, "Nhận GCoins") || clickNodeByText(rootInActiveWindow, "Xem video")
+            return
+        }
+
+        // Ưu tiên 2: Tìm nút tắt Quảng Cáo (Nếu đang xem QC)
+        val adCloseKeywords = listOf("X", "Skip", "Bỏ qua", "Đóng", "Claim", "Nhận", "Tiếp tục", "Close")
+        for (keyword in adCloseKeywords) {
+            if (clickNodeByText(rootInActiveWindow, keyword)) {
+                return
+            }
+        }
+
+        // Ưu tiên 3: Tìm nút X "Tàng hình" (Góc trên bên phải)
+        // Quét các node là ImageView hoặc Button nằm ở 1/4 màn hình trên cùng bên phải
+        if (clickTopRightHiddenButton(rootInActiveWindow)) {
+            return
+        }
+    }
+
+    // Hàm tìm và click text (thông minh: tự tìm node cha nếu node con không click được)
+    private fun clickNodeByText(root: AccessibilityNodeInfo?, text: String): Boolean {
+        if (root == null) return false
         val nodes = root.findAccessibilityNodeInfosByText(text)
         for (node in nodes) {
-            var clickable = node
-            while (clickable != null && !clickable.isClickable) { clickable = clickable.parent }
-            if (clickable != null) {
-                clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                return true
-            }
+            if (performSmartClick(node)) return true
         }
         return false
     }
 
-    private fun clickTopRightCorner() {
-        val width = resources.displayMetrics.widthPixels
-        val path = Path().apply { moveTo(width - 60f, 60f) }
-        dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 50)).build(), null, null)
-    }
+    // Hàm "Siêu Tư Duy": Tìm nút X không có text dựa trên tọa độ và khả năng click
+    private fun clickTopRightHiddenButton(root: AccessibilityNodeInfo?): Boolean {
+        if (root == null) return false
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (!isRunning || event == null) return
-        val pkg = event.packageName?.toString() ?: return
+        // Đệ quy duyệt toàn bộ cây giao diện
+        fun traverse(node: AccessibilityNodeInfo?): Boolean {
+            if (node == null) return false
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
 
-        // 🛑 CHẶN ĐỨNG CHUYỂN HƯỚNG (Google Play, Trình duyệt)
-        if (pkg == "com.android.vending" || pkg.contains("chrome") || pkg.contains("browser")) {
-            performGlobalAction(GLOBAL_ACTION_BACK)
-            Handler(Looper.getMainLooper()).postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 300)
+            // Nếu node nằm ở góc trên bên phải (1/4 trên, 1/4 phải) và có thể click
+            if (rect.right > screenWidth * 0.75 && rect.top < screenHeight * 0.25) {
+                if (node.isClickable && (node.className.contains("Button") || node.className.contains("Image"))) {
+                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    return true
+                }
+            }
+            // Duyệt các node con
+            for (i in 0 until node.childCount) {
+                if (traverse(node.getChild(i))) return true
+            }
+            return false
         }
+        return traverse(root)
     }
 
+    private fun performSmartClick(node: AccessibilityNodeInfo): Boolean {
+        var current = node
+        // Đi ngược lên node cha nếu node hiện tại không click được
+        while (current != null) {
+            if (current.isClickable) {
+                current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                return true
+            }
+            current = current.parent
+        }
+        return false
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() { isRunning = false }
 
     override fun onDestroy() {
