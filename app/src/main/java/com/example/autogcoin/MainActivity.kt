@@ -46,13 +46,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnStart.setOnClickListener {
-            // 1. Kiểm tra quyền Trợ năng trước (Nếu chưa bật thì không chạy được)
             if (!isAccessibilityServiceEnabled(this, AutoClickService::class.java)) {
-                Toast.makeText(this, "Sếp chưa bật quyền Trợ năng cho App!", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Sếp phải bật quyền Trợ năng thì Auto mới chạy được!", Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
 
-            // 2. Kiểm tra quyền Cửa sổ nổi
             if (!Settings.canDrawOverlays(this)) {
                 val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
                 startActivityForResult(intent, 101)
@@ -62,7 +60,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Hàm kiểm tra xem quyền Trợ năng đã được bật chưa
     private fun isAccessibilityServiceEnabled(context: Context, service: Class<*>): Boolean {
         val serviceId = context.packageName + "/" + service.name
         val enabledServices = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
@@ -96,18 +93,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startOverlayAndGame(gamePackage: String) {
-        // Kiểm tra xem Game có thực sự được cài trên máy không
         val launchIntent = packageManager.getLaunchIntentForPackage(gamePackage)
         
         if (launchIntent == null) {
-            Toast.makeText(this, "Không tìm thấy Game: $gamePackage", Toast.LENGTH_LONG).show()
-            return // Thoát luôn, không bật màn hình đen nữa để tránh bị kẹt
+            Toast.makeText(this, "Máy chưa cài Game: $gamePackage", Toast.LENGTH_LONG).show()
+            return
         }
 
-        // Nếu có game thì bật màn hình đen
+        // Bật Nút nổi (Overlay)
         val serviceIntent = Intent(this, OverlayService::class.java)
         ContextCompat.startForegroundService(this, serviceIntent)
         
+        // Mở Game
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(launchIntent)
         
