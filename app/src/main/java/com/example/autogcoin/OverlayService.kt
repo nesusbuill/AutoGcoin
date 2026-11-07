@@ -40,7 +40,7 @@ class OverlayService : Service() {
     private fun buildNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("AutoGcoin Đang Chạy")
-            .setContentText("Hệ thống đang chờ lệnh Bắt Đầu...")
+            .setContentText("Đang chờ lệnh...")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .build()
     }
@@ -63,9 +63,15 @@ class OverlayService : Service() {
         params.gravity = Gravity.TOP or Gravity.START
         windowManager.addView(overlayView, params)
 
+        // Sự kiện nút Bắt đầu
         overlayView?.findViewById<Button>(R.id.btnStartAuto)?.setOnClickListener {
             sendBroadcast(Intent("START_AUTO_CLICK"))
             stopSelf() 
+        }
+
+        // Sự kiện nút X (Thoát khẩn cấp)
+        overlayView?.findViewById<Button>(R.id.btnCloseOverlay)?.setOnClickListener {
+            stopSelf() // Tắt màn hình đen ngay lập tức
         }
     }
 
