@@ -12,7 +12,13 @@
     <!-- Quyền tối quan trọng để quét được app ẩn như Builda -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
 
-    <application android:allowBackup="true" android:icon="@mipmap/ic_launcher" android:label="AutoGcoin" android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
+    <!-- Đã sửa icon thành của hệ thống để không bị lỗi build -->
+    <application 
+        android:allowBackup="true" 
+        android:icon="@android:drawable/sym_def_app_icon" 
+        android:label="AutoGcoin" 
+        android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
+        
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
