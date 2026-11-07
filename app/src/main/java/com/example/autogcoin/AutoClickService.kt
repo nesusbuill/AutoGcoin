@@ -41,6 +41,8 @@ class AutoClickService : AccessibilityService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 "START_AUTO_CLICK" -> {
+                    // Reset lại trạng thái mỗi khi bấm chạy
+                    isProcessing = false
                     if (!isRunning) {
                         isRunning = true
                         showToast("BẮT ĐẦU: Đang tạo Email...")
@@ -49,6 +51,7 @@ class AutoClickService : AccessibilityService() {
                 }
                 "STOP_AUTO_CLICK" -> {
                     isRunning = false
+                    isProcessing = false
                     showToast("ĐÃ DỪNG AUTO!")
                 }
             }
@@ -71,12 +74,13 @@ class AutoClickService : AccessibilityService() {
     private fun startMasterCycle() {
         serviceScope.launch {
             if (accountCount < maxAccounts) {
+                showToast("Đang kết nối tới server tạo mail...")
                 mailManager.createTempEmail { success, email ->
                     if (success) {
                         showToast("Đã tạo Email: $email. Đang mở VPN...")
                         toggleProtonVPN()
                     } else {
-                        showToast("LỖI TẠO EMAIL! Sếp thử lại sau.")
+                        showToast("LỖI TẠO EMAIL! Sếp kiểm tra lại mạng.")
                         isRunning = false
                     }
                 }
@@ -89,8 +93,13 @@ class AutoClickService : AccessibilityService() {
 
     private fun toggleProtonVPN() {
         val intent = packageManager.getLaunchIntentForPackage(protonVpnPackage)
-        intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(intent)
+        if (intent != null) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+        } else {
+            showToast("Không tìm thấy Proton VPN! Vào Game luôn...")
+            openGame()
+        }
     }
 
     private fun openGame() {
@@ -104,19 +113,16 @@ class AutoClickService : AccessibilityService() {
         val root = rootInActiveWindow ?: return
         val pkg = event.packageName?.toString() ?: return
 
-        // Chặn quảng cáo tự mở
         if (pkg == "com.android.vending" || pkg.contains("browser")) {
             performGlobalAction(GLOBAL_ACTION_BACK)
             return
         }
 
-        // Xử lý VPN
         if (pkg == protonVpnPackage) {
             handleProtonVPN(root)
             return
         }
 
-        // Xử lý trong Game
         if (pkg == gamePackage) {
             handleGameScreen(root)
         }
@@ -151,11 +157,9 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    // 🧠 BỘ NÃO ĐIỀU HƯỚNG GIAO DIỆN
     private fun handleGameScreen(root: AccessibilityNodeInfo) {
         if (isProcessing) return
 
-        // 1. NẾU ĐANG Ở MÀN HÌNH ĐĂNG NHẬP/ĐĂNG KÝ
         if (findNode(root, "Đăng ký") != null || findNode(root, "Register") != null) {
             isProcessing = true
             serviceScope.launch {
@@ -172,7 +176,6 @@ class AutoClickService : AccessibilityService() {
             return
         }
 
-        // 2. NHẬP MÃ OTP
         if (findNode(root, "Nhập mã") != null || findNode(root, "OTP") != null) {
             isProcessing = true
             serviceScope.launch {
@@ -199,7 +202,6 @@ class AutoClickService : AccessibilityService() {
             return
         }
 
-        // 3. KIỂM TRA HẾT LƯỢT -> CHUYỂN COIN -> ĐĂNG XUẤT
         if (findNode(root, "Đã đạt giới hạn") != null || findNode(root, "Hết lượt") != null) {
             isProcessing = true
             serviceScope.launch {
@@ -213,7 +215,7 @@ class AutoClickService : AccessibilityService() {
                 accountCount++
                 isProcessing = false
                 if (accountCount < maxAccounts) {
-                    startMainCycleAfterLogout()
+                    startMasterCycle()
                 } else {
                     showToast("ĐÃ HOÀN THÀNH $maxAccounts ACC!")
                     isRunning = false
@@ -222,7 +224,6 @@ class AutoClickService : AccessibilityService() {
             return
         }
 
-        // 4. CÀY COIN (Nếu đang ở đúng màn hình)
         if (clickNodeByText(root, "Nhận GCoins sau QC") || clickNodeByText(root, "Nhận GCoin sau QC")) {
             showToast("Đang vào xem Quảng Cáo...")
             return
@@ -237,15 +238,11 @@ class AutoClickService : AccessibilityService() {
             if (clickNodeByText(root, keyword)) return
         }
 
-        // 5. TỰ ĐỘNG ĐIỀU HƯỚNG ĐẾN CHỖ CÀY COIN (Từ Trang Chủ)
-        // Nếu không tìm thấy các nút trên, bot sẽ tự động tìm đường đi
         if (clickNodeByText(root, "Nhận") || clickNodeByText(root, "Nhận thưởng")) {
             return
         }
         
-        // Bấm vào tab Cá nhân (góc dưới phải) hoặc icon Ví
         if (findNode(root, "Trang chủ") != null) {
-            // Đang ở màn hình chính -> Tìm Avatar/Ví để vào
             if (!clickAvatarByCoordinates()) {
                 clickNodeByText(root, "Ví")
                 clickNodeByText(root, "Số dư")
@@ -253,7 +250,6 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    // 💸 LUỒNG CHUYỂN COIN
     private suspend fun navigateToTransfer(root: AccessibilityNodeInfo) {
         if (clickNodeByText(root, "Số dư") || clickNodeByText(root, "Ví")) {
             delay(2000)
@@ -272,7 +268,6 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    // 🚪 LUỒNG ĐĂNG XUẤT
     private suspend fun navigateToLogout() {
         if (clickNodeByText(rootInActiveWindow, "Cài đặt")) {
             delay(2000)
@@ -285,21 +280,9 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    private fun startMainCycleAfterLogout() {
-        // Sau khi đăng xuất, quay lại màn hình login để đăng ký acc mới
-        mailManager.createTempEmail { success, email ->
-            if (success) {
-                showToast("Đã tạo Email mới: $email. Mở VPN...")
-                toggleProtonVPN()
-            }
-        }
-    }
-
-    // 📍 HÀM CLICK TỌA ĐỘ (Dùng khi không tìm thấy chữ)
     private fun clickAvatarByCoordinates(): Boolean {
         val width = resources.displayMetrics.widthPixels
         val height = resources.displayMetrics.heightPixels
-        // Click vào góc dưới cùng bên phải (Nơi có icon Cá nhân/Avatar)
         val x = width - 100f
         val y = height - 100f
         
@@ -308,7 +291,6 @@ class AutoClickService : AccessibilityService() {
         return true
     }
 
-    // --- CÁC HÀM TIỆN ÍCH ---
     private fun showToast(message: String) {
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
