@@ -2,10 +2,8 @@ package com.example.autogcoin
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.Path
 import android.graphics.PixelFormat
@@ -20,7 +18,6 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.TextView
 import android.widget.Toast
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,58 +29,39 @@ class AutoClickService : AccessibilityService() {
 
     private var isRunning = false
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val gamePackage = "com.hortor.juliancysj"
-    private val protonVpnPackage = "ch.protonvpn.android"
+    private val gamePackage = "com.hortor.juliancysj" // Đã cập nhật đúng package Builda
     
-    private var isProcessing = false 
     private var windowManager: WindowManager? = null
     private var debugDotView: View? = null
-
-    private val receiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                "START_AUTO_CLICK" -> {
-                    isProcessing = false
-                    if (!isRunning) {
-                        isRunning = true
-                        showToast("🚀 Auto Đã Bật!")
-                        startAutoLoop()
-                    }
-                }
-                "STOP_AUTO_CLICK" -> {
-                    isRunning = false
-                    isProcessing = false
-                    showToast("🛑 Đã Dừng Auto!")
-                }
-            }
-        }
-    }
+    private var lastClickTime = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val filter = IntentFilter().apply {
-            addAction("START_AUTO_CLICK")
-            addAction("STOP_AUTO_CLICK")
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
-        } else {
-            ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
-        }
+        showToast("✅ Trợ năng đã kết nối! Đang chờ lệnh...")
+        startPollingMemory()
     }
 
-    private fun startAutoLoop() {
+    // Hàm liên tục kiểm tra bộ nhớ xem có lệnh CHẠY không
+    private fun startPollingMemory() {
         serviceScope.launch {
-            while (isRunning) {
-                val root = rootInActiveWindow
-                val pkg = root?.packageName?.toString() ?: ""
+            while (true) {
+                val prefs = getSharedPreferences("AutoConfig", MODE_PRIVATE)
+                isRunning = prefs.getBoolean("is_auto_running", false)
                 
-                if (pkg == gamePackage) {
-                    handleGameScreen(root)
+                if (isRunning) {
+                    val root = rootInActiveWindow
+                    val pkg = root?.packageName?.toString() ?: ""
+                    
+                    if (pkg == gamePackage) {
+                        // Chỉ thực hiện click nếu đã qua 2.5 giây (tránh click quá nhanh)
+                        if (System.currentTimeMillis() - lastClickTime > 2500) {
+                            handleGameScreen(root)
+                            lastClickTime = System.currentTimeMillis()
+                        }
+                    }
                 }
-                // Quét lại màn hình mỗi 2.5 giây
-                delay(2500) 
+                delay(500) // Cứ 0.5s kiểm tra bộ nhớ 1 lần
             }
         }
     }
@@ -95,51 +73,41 @@ class AutoClickService : AccessibilityService() {
         dumpAllTexts(root, allTexts)
         val textString = allTexts.joinToString(" ")
 
-        // 1. ĐANG Ở TRANG CHỦ -> Click Avatar góc dưới phải
+        // 1. TRANG CHỦ -> CLICK AVATAR
         if (textString.contains("Trang chủ") || textString.contains("Đề xuất")) {
-            showToast("Đang ở Trang Chủ -> Bấm Avatar")
-            // Tọa độ Avatar: 90% từ trái sang, 92% từ trên xuống
+            showToast("Radar: Trang Chủ -> Bấm Avatar")
             clickCoordinatePercent(0.90f, 0.92f)
             return
         }
 
-        // 2. ĐANG Ở TRANG CÁ NHÂN -> Click Số dư
+        // 2. TRANG CÁ NHÂN -> CLICK SỐ DƯ
         if (textString.contains("Người theo dõi") || textString.contains("Bài đăng") || textString.contains("Dự án")) {
-            showToast("Đang ở Trang Cá Nhân -> Bấm Số Dư")
-            if (!clickNodeByText(root, "Số dư") && !clickNodeByText(root, "Ví")) {
-                // Tọa độ nút Số dư: 50% từ trái sang, 25% từ trên xuống
-                clickCoordinatePercent(0.50f, 0.25f)
+            showToast("Radar: Trang Cá Nhân -> Bấm Số Dư")
+            if (!clickNodeByText(root, "Số dư")) {
+                clickCoordinatePercent(0.50f, 0.25f) // Tọa độ nút số dư
             }
             return
         }
 
-        // 3. ĐANG Ở TRANG SỐ DƯ -> Click Nhận (GCoins)
+        // 3. TRANG SỐ DƯ -> CLICK NHẬN
         if (textString.contains("GCoins") && textString.contains("Beans")) {
-            showToast("Đang ở Trang Số Dư -> Bấm Nhận")
+            showToast("Radar: Trang Số Dư -> Bấm Nhận")
             if (!clickNodeByText(root, "Nhận")) {
-                // Tọa độ nút Nhận (bên trái): 20% từ trái sang, 20% từ trên xuống
-                clickCoordinatePercent(0.20f, 0.20f)
+                clickCoordinatePercent(0.20f, 0.20f) // Tọa độ nút nhận
             }
             return
         }
 
-        // 4. ĐANG Ở MÀN HÌNH NHẬN GCOINS -> Click Nhận GCoins sau QC
-        if (clickNodeByText(root, "Nhận GCoins sau QC") || clickNodeByText(root, "Nhận GCoin sau QC")) {
-            showToast("Đã tìm thấy Nhận GCoins sau QC!")
+        // 4. CÀY COIN & TẮT QC
+        if (clickNodeByText(root, "Nhận GCoins sau QC") || clickNodeByText(root, "Nhận GCoins")) {
+            showToast("Radar: Đang xem quảng cáo...")
             return
         }
-
-        // 5. TẮT QUẢNG CÁO (Nếu đang ở màn hình video)
         for (kw in listOf("X", "Skip", "Bỏ qua", "Đóng", "Claim")) {
-            if (clickNodeByText(root, kw)) {
-                showToast("Đã tắt quảng cáo!")
-                return
-            }
+            if (clickNodeByText(root, kw)) return
         }
     }
 
-    // --- CÁC HÀM HỖ TRỢ ---
-    
     private fun clickCoordinatePercent(xPercent: Float, yPercent: Float) {
         val width = resources.displayMetrics.widthPixels
         val height = resources.displayMetrics.heightPixels
@@ -149,9 +117,7 @@ class AutoClickService : AccessibilityService() {
         showRedDot(x, y)
         
         val path = Path().apply { moveTo(x, y) }
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 100))
-            .build()
+        val gesture = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 100)).build()
         dispatchGesture(gesture, null, null)
     }
 
@@ -160,11 +126,7 @@ class AutoClickService : AccessibilityService() {
         try {
             debugDotView?.let { windowManager?.removeView(it) }
             debugDotView = TextView(this).apply {
-                text = "X"
-                setTextColor(Color.WHITE)
-                setBackgroundColor(Color.RED)
-                textSize = 20f
-                gravity = Gravity.CENTER
+                text = "X"; setTextColor(Color.WHITE); setBackgroundColor(Color.RED); textSize = 20f; gravity = Gravity.CENTER
             }
             val params = WindowManager.LayoutParams(
                 60, 60,
@@ -173,8 +135,7 @@ class AutoClickService : AccessibilityService() {
                 PixelFormat.TRANSLUCENT
             )
             params.gravity = Gravity.TOP or Gravity.START
-            params.x = x.toInt() - 30
-            params.y = y.toInt() - 30
+            params.x = x.toInt() - 30; params.y = y.toInt() - 30
             windowManager?.addView(debugDotView, params)
             
             Handler(Looper.getMainLooper()).postDelayed({
@@ -201,6 +162,7 @@ class AutoClickService : AccessibilityService() {
         return false
     }
 
+    // Chặn quảng cáo tự chuyển sang CH Play
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!isRunning || event == null) return
         val pkg = event.packageName?.toString() ?: return
@@ -220,7 +182,6 @@ class AutoClickService : AccessibilityService() {
         super.onDestroy()
         isRunning = false
         serviceScope.cancel()
-        unregisterReceiver(receiver)
         debugDotView?.let { windowManager?.removeView(it) }
     }
 }
