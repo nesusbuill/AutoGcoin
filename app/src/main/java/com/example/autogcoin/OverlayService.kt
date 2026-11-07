@@ -14,9 +14,11 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 
 class OverlayService : Service() {
+
     private lateinit var windowManager: WindowManager
     private var overlayView: View? = null
     private lateinit var params: WindowManager.LayoutParams
@@ -58,21 +60,24 @@ class OverlayService : Service() {
         }
 
         params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT, 
+            WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, 
+            PixelFormat.TRANSLUCENT
         )
         params.gravity = Gravity.TOP or Gravity.START
         params.x = 100
         params.y = 300
         windowManager.addView(overlayView, params)
 
-        // Thiết lập kéo thả (Drag & Drop)
+        // Thiết lập kéo thả (Drag & Drop) để di chuyển thanh nổi
         overlayView?.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
             private var initialTouchX = 0f
             private var initialTouchY = 0f
+            
             override fun onTouch(v: View?, event: MotionEvent?): Boolean {
                 when (event?.action) {
                     MotionEvent.ACTION_DOWN -> {
@@ -91,12 +96,21 @@ class OverlayService : Service() {
             }
         })
 
+        // XỬ LÝ NÚT CHẠY AUTO
         overlayView?.findViewById<Button>(R.id.btnStartAuto)?.setOnClickListener {
-            sendBroadcast(Intent("START_AUTO_CLICK"))
+            Toast.makeText(this, "Đã bấm CHẠY AUTO! Đang gửi lệnh...", Toast.LENGTH_SHORT).show()
+            
+            // Sử dụng setPackage để Android 13/14 không chặn lệnh
+            val intent = Intent("START_AUTO_CLICK").setPackage(packageName)
+            sendBroadcast(intent)
         }
 
+        // XỬ LÝ NÚT DỪNG
         overlayView?.findViewById<Button>(R.id.btnStopAuto)?.setOnClickListener {
-            sendBroadcast(Intent("STOP_AUTO_CLICK"))
+            Toast.makeText(this, "Đã bấm DỪNG!", Toast.LENGTH_SHORT).show()
+            
+            val intent = Intent("STOP_AUTO_CLICK").setPackage(packageName)
+            sendBroadcast(intent)
         }
     }
 
@@ -104,5 +118,6 @@ class OverlayService : Service() {
         super.onDestroy()
         overlayView?.let { windowManager.removeView(it) }
     }
+
     override fun onBind(intent: Intent?): IBinder? = null
 }
