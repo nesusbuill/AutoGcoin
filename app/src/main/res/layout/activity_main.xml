@@ -4,5 +4,16 @@
     android:gravity="center" android:orientation="vertical" android:padding="24dp">
 
     <Button android:id="@+id/btnAccessibility" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="1. Cấp quyền Trợ năng" />
-    <Button android:id="@+id/btnStart" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="2. Bắt đầu Cày Gcoin" />
+
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="Chọn Game cần cày:" android:textSize="16sp" android:textStyle="bold"/>
+
+    <!-- Danh sách xổ xuống chứa các game trên máy -->
+    <Spinner
+        android:id="@+id/spinnerApps"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:backgroundTint="#FF5722"/>
+
+    <Button android:id="@+id/btnStart" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="2. Bắt đầu Cày Gcoin" />
 </LinearLayout>
