@@ -24,7 +24,7 @@ import okhttp3.Request
 
 class MainActivity : AppCompatActivity() {
 
-    private val gistUrl = "https://gist.githubusercontent.com/nesusbuill/9a5fc7a3d920a0967f9ab77c395876aa/raw"
+    private val gistUrl = "https://gist.githubusercontent.com/nesusbuill/9a5fc7a3d920a0967f9ab77c395876aa/raw/28c79aafcd1c423cab7e5056a555057fe1a07507/rules.json"
     private val defaultGamePackage = "com.hortor.juliancysj"
 
     override fun onCreate(savedInstanceState: Bundle?) {
