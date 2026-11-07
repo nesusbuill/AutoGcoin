@@ -3,6 +3,7 @@ package com.example.autogcoin
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -26,12 +27,11 @@ import okhttp3.Request
 
 class MainActivity : AppCompatActivity() {
 
+    // Link Raw Gist của sếp
     private val gistUrl = "https://gist.githubusercontent.com/nesusbuill/9a5fc7a3d920a0967f9ab77c395876aa/raw/28c79aafcd1c423cab7e5056a555057fe1a07507/rules.json"
     
-    // Danh sách lưu tên App và Package Name tương ứng
     private val appNames = mutableListOf<String>()
     private val appPackages = mutableListOf<String>()
-    
     private lateinit var spinnerApps: Spinner
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,7 +48,7 @@ class MainActivity : AppCompatActivity() {
         val btnStart = findViewById<Button>(R.id.btnStart)
         spinnerApps = findViewById(R.id.spinnerApps)
 
-        // Quét toàn bộ App đã cài trên máy đổ vào Spinner
+        // Quét toàn bộ App (đã lọc rác)
         loadInstalledApps()
 
         btnAccessibility.setOnClickListener {
@@ -71,34 +71,46 @@ class MainActivity : AppCompatActivity() {
                 val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
                 startActivityForResult(intent, 101)
             } else {
-                // Lấy package name từ app sếp đã chọn trong Spinner
                 val selectedPackage = appPackages[spinnerApps.selectedItemPosition]
                 fetchGistAndStart(selectedPackage)
             }
         }
     }
 
+    // Hàm chỉ lấy các App do người dùng cài, sắp xếp A-Z
     private fun loadInstalledApps() {
-        // Lấy tất cả các app có icon ngoài màn hình chính (Bỏ qua app hệ thống)
         val intent = Intent(Intent.ACTION_MAIN, null)
         intent.addCategory(Intent.CATEGORY_LAUNCHER)
         val apps = packageManager.queryIntentActivities(intent, 0)
         
+        val appList = mutableListOf<Pair<String, String>>()
+
         for (app in apps) {
-            val appName = app.loadLabel(packageManager).toString()
             val packageName = app.activityInfo.packageName
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
             
-            // Bỏ qua app của chính mình
-            if (packageName != this.packageName) {
-                appNames.add(appName)
-                appPackages.add(packageName)
+            // FLAG_SYSTEM = 0 nghĩa là app do người dùng tự cài (không phải app mặc định máy)
+            if ((appInfo.flags and ApplicationInfo.FLAG_SYSTEM) == 0) {
+                val appName = app.loadLabel(packageManager).toString()
+                if (packageName != this.packageName) {
+                    appList.add(appName to packageName)
+                }
             }
+        }
+
+        appList.sortBy { it.first }
+        
+        appNames.clear()
+        appPackages.clear()
+        for (app in appList) {
+            appNames.add(app.first)
+            appPackages.add(app.second)
         }
 
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, appNames)
         spinnerApps.adapter = adapter
 
-        // Tự động tìm và trỏ đến app "Builda" nếu có trong danh sách
+        // Tự động tìm và chọn "Builda"
         for (i in appNames.indices) {
             if (appNames[i].contains("Builda", ignoreCase = true)) {
                 spinnerApps.setSelection(i)
@@ -128,10 +140,9 @@ class MainActivity : AppCompatActivity() {
                     val json = response.body?.string()
                     val config = Gson().fromJson(json, GistConfig::class.java)
                     
-                    // Lưu package của game đã chọn vào SharedPreferences để AutoClickService dùng
                     val prefs = getSharedPreferences("AutoConfig", MODE_PRIVATE)
                     prefs.edit().putString("config_json", json).apply()
-                    prefs.edit().putString("target_package", selectedPackage).apply() // Lưu Package chuẩn
+                    prefs.edit().putString("target_package", selectedPackage).apply()
                     
                     withContext(Dispatchers.Main) { startOverlayAndGame(selectedPackage) }
                 } else { withContext(Dispatchers.Main) { fallbackStart(selectedPackage) } }
