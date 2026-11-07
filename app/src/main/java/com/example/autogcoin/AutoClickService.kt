@@ -27,8 +27,6 @@ class AutoClickService : AccessibilityService() {
     private var isRunning = false
     private var config: GistConfig? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    
-    // Biến lưu tên Package của game (sẽ được lấy từ Spinner ở MainActivity)
     private var gamePackage = "" 
 
     private val receiver = object : BroadcastReceiver() {
@@ -63,18 +61,15 @@ class AutoClickService : AccessibilityService() {
 
     private fun loadConfig() {
         val prefs = getSharedPreferences("AutoConfig", MODE_PRIVATE)
-        
-        // 1. Lấy Package Name từ Spinner (do MainActivity lưu vào)
         gamePackage = prefs.getString("target_package", "") ?: ""
         
-        // 2. Lấy cấu hình JSON từ Gist (nếu có)
         val json = prefs.getString("config_json", null)
         if (json != null) {
             config = Gson().fromJson(json, GistConfig::class.java)
         }
     }
 
-    // 🚀 VÒNG LẶP SIÊU TỰ ĐỘNG (CHẠY MỖI 1.5 GIÂY)
+    // 🚀 VÒNG LẶP SIÊU TỰ ĐỘNG
     private fun startSuperAutomation() {
         serviceScope.launch {
             while (isRunning) {
@@ -93,31 +88,29 @@ class AutoClickService : AccessibilityService() {
                     if (currentPackage == gamePackage && gamePackage.isNotEmpty()) {
                         handleGameScreen(root)
                     } else if (gamePackage.isNotEmpty()) {
-                        // Nếu đang lạc ở app khác (không phải CH Play), tự động về Home và mở lại game
+                        // Nếu đang lạc ở app khác, tự động về Home và mở lại game
                         performGlobalAction(GLOBAL_ACTION_HOME)
                         delay(2000)
                         val launchIntent = packageManager.getLaunchIntentForPackage(gamePackage)
                         launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         startActivity(launchIntent)
                     }
-                } catch (e: Exception) {
-                    // Bỏ qua lỗi để vòng lặp không bị chết
-                }
-                delay(1500) // Nhịp tim của hệ thống: Quét mỗi 1.5s
+                } catch (e: Exception) { }
+                delay(1500) // Quét mỗi 1.5s
             }
         }
     }
 
-    // 🌟 HÀM XỬ LÝ MÀN HÌNH GAME (Đã thêm suspend để fix lỗi build)
+    // 🌟 HÀM XỬ LÝ MÀN HÌNH GAME (Đã fix lỗi suspend)
     private suspend fun handleGameScreen(root: AccessibilityNodeInfo) {
-        // Ưu tiên 1: Tìm nút nhận thưởng (Nếu đang ở màn hình chờ)
+        // Ưu tiên 1: Tìm nút nhận thưởng
         if (clickNodeByText(root, "10~1000") || clickNodeByText(root, "Phần thưởng từ QC") || clickNodeByText(root, "Xem QC")) {
             delay(2000) // Chờ popup hiện lên
             clickNodeByText(rootInActiveWindow, "Nhận GCoins") || clickNodeByText(rootInActiveWindow, "Xem video")
             return
         }
 
-        // Ưu tiên 2: Tìm nút tắt Quảng Cáo (Nếu đang xem QC)
+        // Ưu tiên 2: Tìm nút tắt Quảng Cáo
         val adCloseKeywords = listOf("X", "Skip", "Bỏ qua", "Đóng", "Claim", "Nhận", "Tiếp tục", "Close")
         for (keyword in adCloseKeywords) {
             if (clickNodeByText(rootInActiveWindow, keyword)) {
@@ -131,7 +124,6 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    // Hàm tìm và click text (tự tìm node cha nếu node con không click được)
     private fun clickNodeByText(root: AccessibilityNodeInfo?, text: String): Boolean {
         if (root == null) return false
         val nodes = root.findAccessibilityNodeInfosByText(text)
@@ -141,7 +133,6 @@ class AutoClickService : AccessibilityService() {
         return false
     }
 
-    // Hàm "Siêu Tư Duy": Tìm nút X không có text dựa trên tọa độ
     private fun clickTopRightHiddenButton(root: AccessibilityNodeInfo?): Boolean {
         if (root == null) return false
         val screenWidth = resources.displayMetrics.widthPixels
@@ -152,7 +143,6 @@ class AutoClickService : AccessibilityService() {
             val rect = Rect()
             node.getBoundsInScreen(rect)
 
-            // Nếu node nằm ở góc trên bên phải (1/4 trên, 1/4 phải) và có thể click
             if (rect.right > screenWidth * 0.75 && rect.top < screenHeight * 0.25) {
                 if (node.isClickable && (node.className.contains("Button") || node.className.contains("Image"))) {
                     node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
