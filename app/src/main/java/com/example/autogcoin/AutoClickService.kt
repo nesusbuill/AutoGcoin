@@ -100,7 +100,8 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    private fun handleGameScreen(root: AccessibilityNodeInfo) {
+    // 🌟 ĐÃ THÊM CHỮ "suspend" Ở ĐÂY
+    private suspend fun handleGameScreen(root: AccessibilityNodeInfo) {
         // Ưu tiên 1: Tìm nút nhận thưởng (Nếu đang ở màn hình chờ)
         if (clickNodeByText(root, "10~1000") || clickNodeByText(root, "Phần thưởng từ QC") || clickNodeByText(root, "Xem QC")) {
             delay(2000) // Chờ popup hiện lên
@@ -117,7 +118,6 @@ class AutoClickService : AccessibilityService() {
         }
 
         // Ưu tiên 3: Tìm nút X "Tàng hình" (Góc trên bên phải)
-        // Quét các node là ImageView hoặc Button nằm ở 1/4 màn hình trên cùng bên phải
         if (clickTopRightHiddenButton(rootInActiveWindow)) {
             return
         }
