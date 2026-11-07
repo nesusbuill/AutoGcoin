@@ -1,4 +1,4 @@
-package com.example.autogcoin // Sếp nhớ đổi lại package cho khớp với project của sếp
+package com.example.autogcoin
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
@@ -30,7 +30,7 @@ class AutoClickService : AccessibilityService() {
     private val maxAccounts = 5
     private val gamePackage = "com.hortor.juliancysj"
     private val protonVpnPackage = "ch.protonvpn.android"
-    private val mainAccountId = "49718334" // ID ACC CHÍNH CỦA SẾP
+    private val mainAccountId = "49718334" // ID ACC CHÍNH
     
     private val mailManager = TempMailManager()
     private var isProcessing = false 
@@ -65,10 +65,8 @@ class AutoClickService : AccessibilityService() {
     private fun startMasterCycle() {
         serviceScope.launch {
             if (accountCount < maxAccounts) {
-                // 1. Tạo Email 10 phút
                 mailManager.createTempEmail { success, _ ->
                     if (success) {
-                        // 2. Fake VPN
                         toggleProtonVPN()
                     }
                 }
@@ -93,19 +91,16 @@ class AutoClickService : AccessibilityService() {
         val root = rootInActiveWindow ?: return
         val pkg = event.packageName?.toString() ?: return
 
-        // Chặn chuyển hướng
         if (pkg == "com.android.vending" || pkg.contains("browser")) {
             performGlobalAction(GLOBAL_ACTION_BACK)
             return
         }
 
-        // Xử lý VPN
         if (pkg == protonVpnPackage) {
             handleProtonVPN(root)
             return
         }
 
-        // Xử lý trong Game
         if (pkg == gamePackage) {
             handleGameScreen(root)
         }
@@ -130,7 +125,7 @@ class AutoClickService : AccessibilityService() {
     private fun handleGameScreen(root: AccessibilityNodeInfo) {
         if (isProcessing) return
 
-        // 1. ĐĂNG KÝ TỰ ĐỘNG
+        // 1. ĐĂNG KÝ
         if (findNode(root, "Đăng ký") != null || findNode(root, "Register") != null) {
             isProcessing = true
             serviceScope.launch {
@@ -146,7 +141,7 @@ class AutoClickService : AccessibilityService() {
             return
         }
 
-        // 2. NHẬP MÃ OTP
+        // 2. NHẬP OTP
         if (findNode(root, "Nhập mã") != null || findNode(root, "OTP") != null) {
             isProcessing = true
             serviceScope.launch {
@@ -175,15 +170,15 @@ class AutoClickService : AccessibilityService() {
         if (findNode(root, "Đã đạt giới hạn") != null || findNode(root, "Hết lượt") != null) {
             isProcessing = true
             serviceScope.launch {
-                // Chuyển coin (Số dư -> Chuyển -> Nhập ID)
+                // Chuyển coin
                 navigateToTransfer(root)
                 delay(3000)
                 
-                // Đăng xuất (Cài đặt -> Đăng xuất)
+                // Đăng xuất
                 navigateToLogout()
                 delay(3000)
                 
-                // Tăng Acc và chạy lại chu trình
+                // Tăng Acc và chạy lại
                 accountCount++
                 isProcessing = false
                 if (accountCount < maxAccounts) {
@@ -193,14 +188,12 @@ class AutoClickService : AccessibilityService() {
             return
         }
 
-        // 4. CÀY COIN (Theo giao diện mới)
+        // 4. CÀY COIN
         if (clickNodeByText(root, "Nhận GCoins sau QC")) {
-            delay(2000)
             return
         }
         
         if (clickNodeByText(root, "Nhận GCoins")) {
-            delay(2000)
             return
         }
         
@@ -211,7 +204,7 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    // 💸 LUỒNG CHUYỂN COIN
+    // 💸 LUỒNG CHUYỂN COIN (Đã thêm chữ suspend)
     private suspend fun navigateToTransfer(root: AccessibilityNodeInfo) {
         if (clickNodeByText(root, "Số dư") || clickNodeByText(root, "Ví")) {
             delay(2000)
@@ -230,7 +223,7 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    // 🚪 LUỒNG ĐĂNG XUẤT
+    // 🚪 LUỒNG ĐĂNG XUẤT (Đã thêm chữ suspend)
     private suspend fun navigateToLogout() {
         if (clickNodeByText(rootInActiveWindow, "Cài đặt")) {
             delay(2000)
@@ -243,7 +236,7 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    // --- CÁC HÀM ĐIỀN FORM THÔNG MINH ---
+    // --- CÁC HÀM TIỆN ÍCH ---
     private fun fillAllEditTexts(root: AccessibilityNodeInfo?) {
         if (root == null) return
         val editTexts = mutableListOf<AccessibilityNodeInfo>()
