@@ -28,7 +28,7 @@ import okhttp3.Request
 
 class MainActivity : AppCompatActivity() {
 
-    private val gistUrl = "https://gist.githubusercontent.com/nesusbuill/9a5fc7a3d920a0967f9ab77c395876aa/raw/28c79aafcd1c423cab7e5056a555057fe1a07507/rules.json"
+    private val gistUrl =  "https://gist.githubusercontent.com/nesusbuill/9a5fc7a3d920a0967f9ab77c395876aa/raw/5ebbb0be3381c53eac459879eae08e7efb4fff08/rules.json"
     
     private val appNames = mutableListOf<String>()
     private val appPackages = mutableListOf<String>()
