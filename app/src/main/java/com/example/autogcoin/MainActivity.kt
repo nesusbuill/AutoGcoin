@@ -9,7 +9,9 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.Spinner
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -25,7 +27,12 @@ import okhttp3.Request
 class MainActivity : AppCompatActivity() {
 
     private val gistUrl = "https://gist.githubusercontent.com/nesusbuill/9a5fc7a3d920a0967f9ab77c395876aa/raw/28c79aafcd1c423cab7e5056a555057fe1a07507/rules.json"
-    private val defaultGamePackage = "com.hortor.juliancysj"
+    
+    // Danh sách lưu tên App và Package Name tương ứng
+    private val appNames = mutableListOf<String>()
+    private val appPackages = mutableListOf<String>()
+    
+    private lateinit var spinnerApps: Spinner
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +46,10 @@ class MainActivity : AppCompatActivity() {
 
         val btnAccessibility = findViewById<Button>(R.id.btnAccessibility)
         val btnStart = findViewById<Button>(R.id.btnStart)
+        spinnerApps = findViewById(R.id.spinnerApps)
+
+        // Quét toàn bộ App đã cài trên máy đổ vào Spinner
+        loadInstalledApps()
 
         btnAccessibility.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -51,11 +62,47 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            if (spinnerApps.selectedItemPosition == -1) {
+                Toast.makeText(this, "Chưa chọn Game!", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
             if (!Settings.canDrawOverlays(this)) {
                 val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
                 startActivityForResult(intent, 101)
             } else {
-                fetchGistAndStart()
+                // Lấy package name từ app sếp đã chọn trong Spinner
+                val selectedPackage = appPackages[spinnerApps.selectedItemPosition]
+                fetchGistAndStart(selectedPackage)
+            }
+        }
+    }
+
+    private fun loadInstalledApps() {
+        // Lấy tất cả các app có icon ngoài màn hình chính (Bỏ qua app hệ thống)
+        val intent = Intent(Intent.ACTION_MAIN, null)
+        intent.addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = packageManager.queryIntentActivities(intent, 0)
+        
+        for (app in apps) {
+            val appName = app.loadLabel(packageManager).toString()
+            val packageName = app.activityInfo.packageName
+            
+            // Bỏ qua app của chính mình
+            if (packageName != this.packageName) {
+                appNames.add(appName)
+                appPackages.add(packageName)
+            }
+        }
+
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, appNames)
+        spinnerApps.adapter = adapter
+
+        // Tự động tìm và trỏ đến app "Builda" nếu có trong danh sách
+        for (i in appNames.indices) {
+            if (appNames[i].contains("Builda", ignoreCase = true)) {
+                spinnerApps.setSelection(i)
+                break
             }
         }
     }
@@ -72,7 +119,7 @@ class MainActivity : AppCompatActivity() {
         return false
     }
 
-    private fun fetchGistAndStart() {
+    private fun fetchGistAndStart(selectedPackage: String) {
         Toast.makeText(this, "Đang tải cấu hình...", Toast.LENGTH_SHORT).show()
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -80,31 +127,35 @@ class MainActivity : AppCompatActivity() {
                 if (response.isSuccessful) {
                     val json = response.body?.string()
                     val config = Gson().fromJson(json, GistConfig::class.java)
-                    getSharedPreferences("AutoConfig", MODE_PRIVATE).edit().putString("config_json", json).apply()
-                    withContext(Dispatchers.Main) { startOverlayAndGame(config.game_package.ifEmpty { defaultGamePackage }) }
-                } else { withContext(Dispatchers.Main) { fallbackStart() } }
-            } catch (e: Exception) { withContext(Dispatchers.Main) { fallbackStart() } }
+                    
+                    // Lưu package của game đã chọn vào SharedPreferences để AutoClickService dùng
+                    val prefs = getSharedPreferences("AutoConfig", MODE_PRIVATE)
+                    prefs.edit().putString("config_json", json).apply()
+                    prefs.edit().putString("target_package", selectedPackage).apply() // Lưu Package chuẩn
+                    
+                    withContext(Dispatchers.Main) { startOverlayAndGame(selectedPackage) }
+                } else { withContext(Dispatchers.Main) { fallbackStart(selectedPackage) } }
+            } catch (e: Exception) { withContext(Dispatchers.Main) { fallbackStart(selectedPackage) } }
         }
     }
 
-    private fun fallbackStart() {
+    private fun fallbackStart(selectedPackage: String) {
         Toast.makeText(this, "Lỗi mạng! Dùng cấu hình mặc định.", Toast.LENGTH_SHORT).show()
-        startOverlayAndGame(defaultGamePackage)
+        getSharedPreferences("AutoConfig", MODE_PRIVATE).edit().putString("target_package", selectedPackage).apply()
+        startOverlayAndGame(selectedPackage)
     }
 
     private fun startOverlayAndGame(gamePackage: String) {
         val launchIntent = packageManager.getLaunchIntentForPackage(gamePackage)
         
         if (launchIntent == null) {
-            Toast.makeText(this, "Máy chưa cài Game: $gamePackage", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Lỗi: Không thể mở App này!", Toast.LENGTH_LONG).show()
             return
         }
 
-        // Bật Nút nổi (Overlay)
         val serviceIntent = Intent(this, OverlayService::class.java)
         ContextCompat.startForegroundService(this, serviceIntent)
         
-        // Mở Game
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(launchIntent)
         
