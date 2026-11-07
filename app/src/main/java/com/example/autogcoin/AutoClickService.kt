@@ -9,8 +9,6 @@ import android.content.IntentFilter
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.content.ContextCompat
@@ -69,7 +67,6 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    // 🚀 VÒNG LẶP SIÊU TỰ ĐỘNG
     private fun startSuperAutomation() {
         serviceScope.launch {
             while (isRunning) {
@@ -77,18 +74,17 @@ class AutoClickService : AccessibilityService() {
                     val root = rootInActiveWindow
                     val currentPackage = root?.packageName?.toString() ?: ""
 
-                    // 1. CHẶN CHUYỂN HƯỚNG APP (Anti-Redirect)
+                    // Chặn chuyển hướng
                     if (currentPackage == "com.android.vending" || currentPackage.contains("browser") || currentPackage.contains("chrome")) {
                         performGlobalAction(GLOBAL_ACTION_BACK)
                         delay(1000)
                         continue
                     }
 
-                    // 2. NẾU ĐANG Ở TRONG GAME ĐÃ CHỌN
                     if (currentPackage == gamePackage && gamePackage.isNotEmpty()) {
                         handleGameScreen(root)
                     } else if (gamePackage.isNotEmpty()) {
-                        // Nếu đang lạc ở app khác, tự động về Home và mở lại game
+                        // Nếu văng ra ngoài, tự động mở lại game
                         performGlobalAction(GLOBAL_ACTION_HOME)
                         delay(2000)
                         val launchIntent = packageManager.getLaunchIntentForPackage(gamePackage)
@@ -101,34 +97,64 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    // 🌟 HÀM XỬ LÝ MÀN HÌNH GAME (Đã fix lỗi suspend)
     private suspend fun handleGameScreen(root: AccessibilityNodeInfo) {
-        // Ưu tiên 1: Tìm nút nhận thưởng
-        if (clickNodeByText(root, "10~1000") || clickNodeByText(root, "Phần thưởng từ QC") || clickNodeByText(root, "Xem QC")) {
-            delay(2000) // Chờ popup hiện lên
-            clickNodeByText(rootInActiveWindow, "Nhận GCoins") || clickNodeByText(rootInActiveWindow, "Xem video")
+        // 1. Ưu tiên bấm nút "Nhận GCoins" (Nút cam trong ảnh của sếp)
+        // Tìm cả chữ "Nhận" để chắc chắn bắt trúng
+        if (clickNodeByText(root, "Nhận GCoins") || clickNodeByText(root, "Nhận Gcoin") || clickNodeByText(root, "Nhận")) {
+            delay(2000) // Đợi video chạy
             return
         }
 
-        // Ưu tiên 2: Tìm nút tắt Quảng Cáo
-        val adCloseKeywords = listOf("X", "Skip", "Bỏ qua", "Đóng", "Claim", "Nhận", "Tiếp tục", "Close")
+        // 2. Tìm nút "Xem QC" hoặc "10~1000" ở màn hình ngoài
+        if (clickNodeByText(root, "10~1000") || clickNodeByText(root, "Phần thưởng từ QC") || clickNodeByText(root, "Xem QC")) {
+            delay(2000)
+            return
+        }
+
+        // 3. Tìm nút tắt Quảng Cáo (Nếu đang xem QC)
+        val adCloseKeywords = listOf("X", "Skip", "Bỏ qua", "Đóng", "Claim", "Tiếp tục", "Close")
         for (keyword in adCloseKeywords) {
-            if (clickNodeByText(rootInActiveWindow, keyword)) {
+            if (clickNodeByText(root, keyword)) {
                 return
             }
         }
 
-        // Ưu tiên 3: Tìm nút X "Tàng hình" (Góc trên bên phải)
-        if (clickTopRightHiddenButton(rootInActiveWindow)) {
+        // 4. Tìm nút X "Tàng hình" (Góc trên bên phải)
+        if (clickTopRightHiddenButton(root)) {
             return
         }
     }
 
+    // 🌟 HÀM CLICK NÂNG CẤP: Tìm thấy chữ -> Bấm lệnh hệ thống -> Nếu xịt thì tự Tap vào tọa độ
     private fun clickNodeByText(root: AccessibilityNodeInfo?, text: String): Boolean {
         if (root == null) return false
         val nodes = root.findAccessibilityNodeInfosByText(text)
         for (node in nodes) {
-            if (performSmartClick(node)) return true
+            // Thử bấm bằng lệnh hệ thống trước (nhanh và nhẹ)
+            if (performSmartClick(node)) {
+                return true
+            }
+            // Nếu lệnh hệ thống thất bại (nút là ảnh, hoặc bị chặn), TAP VẬT LÝ VÀO TỌA ĐỘ
+            if (tapNodeCoordinates(node)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    // Hàm mô phỏng ngón tay chạm vào giữa nút
+    private fun tapNodeCoordinates(node: AccessibilityNodeInfo): Boolean {
+        val rect = Rect()
+        node.getBoundsInScreen(rect)
+        if (rect.width() > 0 && rect.height() > 0) {
+            val x = rect.centerX().toFloat()
+            val y = rect.centerY().toFloat()
+            val path = Path().apply { moveTo(x, y) }
+            val gesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, 100))
+                .build()
+            dispatchGesture(gesture, null, null)
+            return true
         }
         return false
     }
@@ -161,8 +187,8 @@ class AutoClickService : AccessibilityService() {
         var current = node
         while (current != null) {
             if (current.isClickable) {
-                current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                return true
+                val success = current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                if (success) return true
             }
             current = current.parent
         }
