@@ -10,11 +10,11 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler // 🌟 Đã thêm dòng này
-import android.os.Looper  // 🌟 Đã thêm dòng này
-import android.widget.Toast
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -104,22 +104,24 @@ class AutoClickService : AccessibilityService() {
         val root = rootInActiveWindow ?: return
         val pkg = event.packageName?.toString() ?: return
 
+        // Chặn quảng cáo tự mở
         if (pkg == "com.android.vending" || pkg.contains("browser")) {
             performGlobalAction(GLOBAL_ACTION_BACK)
             return
         }
 
+        // Xử lý VPN
         if (pkg == protonVpnPackage) {
             handleProtonVPN(root)
             return
         }
 
+        // Xử lý trong Game
         if (pkg == gamePackage) {
             handleGameScreen(root)
         }
     }
 
-    // 🌍 XỬ LÝ PROTON VPN
     private fun handleProtonVPN(root: AccessibilityNodeInfo) {
         if (isProcessing) return
         isProcessing = true
@@ -131,8 +133,7 @@ class AutoClickService : AccessibilityService() {
             
             val connected = clickNodeByText(rootInActiveWindow, "Kết nối") || 
                             clickNodeByText(rootInActiveWindow, "Connect") || 
-                            clickNodeByText(rootInActiveWindow, "Kết nối nhanh") || 
-                            clickNodeByText(rootInActiveWindow, "Quick Connect")
+                            clickNodeByText(rootInActiveWindow, "Kết nối nhanh")
             
             if (connected) {
                 showToast("Đang kết nối VPN...")
@@ -150,10 +151,11 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
+    // 🧠 BỘ NÃO ĐIỀU HƯỚNG GIAO DIỆN
     private fun handleGameScreen(root: AccessibilityNodeInfo) {
         if (isProcessing) return
 
-        // 1. ĐĂNG KÝ
+        // 1. NẾU ĐANG Ở MÀN HÌNH ĐĂNG NHẬP/ĐĂNG KÝ
         if (findNode(root, "Đăng ký") != null || findNode(root, "Register") != null) {
             isProcessing = true
             serviceScope.launch {
@@ -170,17 +172,17 @@ class AutoClickService : AccessibilityService() {
             return
         }
 
-        // 2. NHẬP OTP
+        // 2. NHẬP MÃ OTP
         if (findNode(root, "Nhập mã") != null || findNode(root, "OTP") != null) {
             isProcessing = true
             serviceScope.launch {
-                showToast("Đang chờ mã OTP từ Email...")
+                showToast("Đang chờ mã OTP...")
                 var retry = 0
                 while (retry < 10) { 
                     mailManager.fetchOTP { otp ->
                         if (otp != null) {
                             serviceScope.launch {
-                                showToast("Đã lấy được OTP: $otp")
+                                showToast("Đã lấy OTP: $otp")
                                 val editTexts = mutableListOf<AccessibilityNodeInfo>()
                                 findEditTextsRecursively(rootInActiveWindow, editTexts)
                                 if(editTexts.isNotEmpty()) fillTextToSpecificNode(editTexts[0], otp)
@@ -197,23 +199,21 @@ class AutoClickService : AccessibilityService() {
             return
         }
 
-        // 3. HẾT LƯỢT -> CHUYỂN COIN -> ĐĂNG XUẤT
+        // 3. KIỂM TRA HẾT LƯỢT -> CHUYỂN COIN -> ĐĂNG XUẤT
         if (findNode(root, "Đã đạt giới hạn") != null || findNode(root, "Hết lượt") != null) {
             isProcessing = true
             serviceScope.launch {
-                showToast("Hết lượt xem QC! Đang chuyển Coin...")
+                showToast("Hết lượt! Đang chuyển Coin...")
                 navigateToTransfer(root)
                 delay(3000)
-                
                 showToast("Đang Đăng xuất...")
                 navigateToLogout()
                 delay(3000)
                 
                 accountCount++
-                showToast("Xong Acc $accountCount. Chuẩn bị làm Acc tiếp theo...")
                 isProcessing = false
                 if (accountCount < maxAccounts) {
-                    startMasterCycle()
+                    startMainCycleAfterLogout()
                 } else {
                     showToast("ĐÃ HOÀN THÀNH $maxAccounts ACC!")
                     isRunning = false
@@ -222,8 +222,8 @@ class AutoClickService : AccessibilityService() {
             return
         }
 
-        // 4. CÀY COIN
-        if (clickNodeByText(root, "Nhận GCoins sau QC")) {
+        // 4. CÀY COIN (Nếu đang ở đúng màn hình)
+        if (clickNodeByText(root, "Nhận GCoins sau QC") || clickNodeByText(root, "Nhận GCoin sau QC")) {
             showToast("Đang vào xem Quảng Cáo...")
             return
         }
@@ -236,8 +236,24 @@ class AutoClickService : AccessibilityService() {
         for (keyword in adCloseKeywords) {
             if (clickNodeByText(root, keyword)) return
         }
+
+        // 5. TỰ ĐỘNG ĐIỀU HƯỚNG ĐẾN CHỖ CÀY COIN (Từ Trang Chủ)
+        // Nếu không tìm thấy các nút trên, bot sẽ tự động tìm đường đi
+        if (clickNodeByText(root, "Nhận") || clickNodeByText(root, "Nhận thưởng")) {
+            return
+        }
+        
+        // Bấm vào tab Cá nhân (góc dưới phải) hoặc icon Ví
+        if (findNode(root, "Trang chủ") != null) {
+            // Đang ở màn hình chính -> Tìm Avatar/Ví để vào
+            if (!clickAvatarByCoordinates()) {
+                clickNodeByText(root, "Ví")
+                clickNodeByText(root, "Số dư")
+            }
+        }
     }
 
+    // 💸 LUỒNG CHUYỂN COIN
     private suspend fun navigateToTransfer(root: AccessibilityNodeInfo) {
         if (clickNodeByText(root, "Số dư") || clickNodeByText(root, "Ví")) {
             delay(2000)
@@ -256,6 +272,7 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
+    // 🚪 LUỒNG ĐĂNG XUẤT
     private suspend fun navigateToLogout() {
         if (clickNodeByText(rootInActiveWindow, "Cài đặt")) {
             delay(2000)
@@ -266,6 +283,29 @@ class AutoClickService : AccessibilityService() {
                 delay(2000)
             }
         }
+    }
+
+    private fun startMainCycleAfterLogout() {
+        // Sau khi đăng xuất, quay lại màn hình login để đăng ký acc mới
+        mailManager.createTempEmail { success, email ->
+            if (success) {
+                showToast("Đã tạo Email mới: $email. Mở VPN...")
+                toggleProtonVPN()
+            }
+        }
+    }
+
+    // 📍 HÀM CLICK TỌA ĐỘ (Dùng khi không tìm thấy chữ)
+    private fun clickAvatarByCoordinates(): Boolean {
+        val width = resources.displayMetrics.widthPixels
+        val height = resources.displayMetrics.heightPixels
+        // Click vào góc dưới cùng bên phải (Nơi có icon Cá nhân/Avatar)
+        val x = width - 100f
+        val y = height - 100f
+        
+        val path = Path().apply { moveTo(x, y) }
+        dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 100)).build(), null, null)
+        return true
     }
 
     // --- CÁC HÀM TIỆN ÍCH ---
