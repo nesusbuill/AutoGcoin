@@ -27,15 +27,19 @@ class AutoClickService : AccessibilityService() {
     private var isRunning = false
     private var config: GistConfig? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var gamePackage = "com.hortor.juliancysj" // Fallback
+    
+    // Biến lưu tên Package của game (sẽ được lấy từ Spinner ở MainActivity)
+    private var gamePackage = "" 
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 "START_AUTO_CLICK" -> {
                     loadConfig()
-                    isRunning = true
-                    startSuperAutomation()
+                    if (!isRunning) {
+                        isRunning = true
+                        startSuperAutomation()
+                    }
                 }
                 "STOP_AUTO_CLICK" -> {
                     isRunning = false
@@ -58,11 +62,15 @@ class AutoClickService : AccessibilityService() {
     }
 
     private fun loadConfig() {
-        val json = getSharedPreferences("AutoConfig", MODE_PRIVATE).getString("config_json", null)
+        val prefs = getSharedPreferences("AutoConfig", MODE_PRIVATE)
+        
+        // 1. Lấy Package Name từ Spinner (do MainActivity lưu vào)
+        gamePackage = prefs.getString("target_package", "") ?: ""
+        
+        // 2. Lấy cấu hình JSON từ Gist (nếu có)
+        val json = prefs.getString("config_json", null)
         if (json != null) {
-            val gistConfig = Gson().fromJson(json, GistConfig::class.java)
-            config = gistConfig
-            gamePackage = gistConfig.game_package.ifEmpty { gamePackage }
+            config = Gson().fromJson(json, GistConfig::class.java)
         }
     }
 
@@ -81,10 +89,10 @@ class AutoClickService : AccessibilityService() {
                         continue
                     }
 
-                    // 2. NẾU ĐANG Ở TRONG GAME
-                    if (currentPackage == gamePackage) {
+                    // 2. NẾU ĐANG Ở TRONG GAME ĐÃ CHỌN
+                    if (currentPackage == gamePackage && gamePackage.isNotEmpty()) {
                         handleGameScreen(root)
-                    } else {
+                    } else if (gamePackage.isNotEmpty()) {
                         // Nếu đang lạc ở app khác (không phải CH Play), tự động về Home và mở lại game
                         performGlobalAction(GLOBAL_ACTION_HOME)
                         delay(2000)
@@ -100,7 +108,7 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    // 🌟 ĐÃ THÊM CHỮ "suspend" Ở ĐÂY
+    // 🌟 HÀM XỬ LÝ MÀN HÌNH GAME (Đã thêm suspend để fix lỗi build)
     private suspend fun handleGameScreen(root: AccessibilityNodeInfo) {
         // Ưu tiên 1: Tìm nút nhận thưởng (Nếu đang ở màn hình chờ)
         if (clickNodeByText(root, "10~1000") || clickNodeByText(root, "Phần thưởng từ QC") || clickNodeByText(root, "Xem QC")) {
@@ -123,7 +131,7 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    // Hàm tìm và click text (thông minh: tự tìm node cha nếu node con không click được)
+    // Hàm tìm và click text (tự tìm node cha nếu node con không click được)
     private fun clickNodeByText(root: AccessibilityNodeInfo?, text: String): Boolean {
         if (root == null) return false
         val nodes = root.findAccessibilityNodeInfosByText(text)
@@ -133,13 +141,12 @@ class AutoClickService : AccessibilityService() {
         return false
     }
 
-    // Hàm "Siêu Tư Duy": Tìm nút X không có text dựa trên tọa độ và khả năng click
+    // Hàm "Siêu Tư Duy": Tìm nút X không có text dựa trên tọa độ
     private fun clickTopRightHiddenButton(root: AccessibilityNodeInfo?): Boolean {
         if (root == null) return false
         val screenWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
 
-        // Đệ quy duyệt toàn bộ cây giao diện
         fun traverse(node: AccessibilityNodeInfo?): Boolean {
             if (node == null) return false
             val rect = Rect()
@@ -152,7 +159,6 @@ class AutoClickService : AccessibilityService() {
                     return true
                 }
             }
-            // Duyệt các node con
             for (i in 0 until node.childCount) {
                 if (traverse(node.getChild(i))) return true
             }
@@ -163,7 +169,6 @@ class AutoClickService : AccessibilityService() {
 
     private fun performSmartClick(node: AccessibilityNodeInfo): Boolean {
         var current = node
-        // Đi ngược lên node cha nếu node hiện tại không click được
         while (current != null) {
             if (current.isClickable) {
                 current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
