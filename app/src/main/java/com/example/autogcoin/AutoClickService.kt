@@ -10,6 +10,8 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler // 🌟 Đã thêm dòng này
+import android.os.Looper  // 🌟 Đã thêm dòng này
 import android.widget.Toast
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -117,18 +119,16 @@ class AutoClickService : AccessibilityService() {
         }
     }
 
-    // 🌍 XỬ LÝ PROTON VPN (Đã thêm tiếng Việt)
+    // 🌍 XỬ LÝ PROTON VPN
     private fun handleProtonVPN(root: AccessibilityNodeInfo) {
         if (isProcessing) return
         isProcessing = true
         serviceScope.launch {
-            // 1. Nếu đang kết nối thì ngắt ra (để đổi IP)
             if (clickNodeByText(root, "Ngắt kết nối") || clickNodeByText(root, "Disconnect") || clickNodeByText(root, "Hủy")) {
                 showToast("Đang đổi IP VPN...")
                 delay(2000)
             }
             
-            // 2. Bấm nút Kết nối (Hỗ trợ cả Tiếng Việt và Anh)
             val connected = clickNodeByText(rootInActiveWindow, "Kết nối") || 
                             clickNodeByText(rootInActiveWindow, "Connect") || 
                             clickNodeByText(rootInActiveWindow, "Kết nối nhanh") || 
@@ -136,13 +136,12 @@ class AutoClickService : AccessibilityService() {
             
             if (connected) {
                 showToast("Đang kết nối VPN...")
-                delay(5000) // Đợi 5s cho VPN kết nối xong
-                performGlobalAction(GLOBAL_ACTION_BACK) // Thoát VPN
+                delay(5000) 
+                performGlobalAction(GLOBAL_ACTION_BACK)
                 delay(1000)
-                openGame() // Mở lại Game
+                openGame()
                 showToast("Đã đổi IP, đang vào Game...")
             } else {
-                // Nếu không tìm thấy nút, thử bấm Back để thoát và vào game
                 performGlobalAction(GLOBAL_ACTION_BACK)
                 delay(1000)
                 openGame()
