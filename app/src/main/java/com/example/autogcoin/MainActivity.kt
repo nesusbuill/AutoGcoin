@@ -59,7 +59,6 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // Ưu tiên lấy từ ô nhập tay, nếu trống thì lấy từ Spinner
             var selectedPackage = edtPackage.text.toString().trim()
             if (selectedPackage.isEmpty()) {
                 if (spinnerApps.selectedItemPosition != -1) {
@@ -79,18 +78,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Hàm quét TẤT CẢ các App (kể cả app ẩn)
     private fun loadAllInstalledApps() {
+        // getInstalledPackages(0) sẽ lấy mọi app, kể cả app không có icon
         val packages = packageManager.getInstalledPackages(0)
         val appList = mutableListOf<Pair<String, String>>()
 
         for (pkgInfo in packages) {
             val packageName = pkgInfo.packageName
-            
-            // Bỏ qua app của chính mình
             if (packageName == this.packageName) continue
 
-            // Chỉ lấy app không phải hệ thống (bên thứ 3) để danh sách bớt rác
+            // Bỏ app hệ thống cho đỡ rối, nhưng vẫn giữ app người dùng (kể cả app ẩn)
             if ((pkgInfo.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) == 0) {
                 val appName = packageManager.getApplicationLabel(pkgInfo.applicationInfo).toString()
                 appList.add("$appName\n($packageName)" to packageName)
@@ -109,11 +106,11 @@ class MainActivity : AppCompatActivity() {
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, appNames)
         spinnerApps.adapter = adapter
 
-        // Tự động điền Builda nếu tìm thấy trong danh sách
+        // Tự động chọn sẵn Builda nếu tìm thấy
         for (i in appNames.indices) {
             if (appNames[i].contains("Builda", ignoreCase = true) || appPackages[i].contains("hortor", ignoreCase = true)) {
                 spinnerApps.setSelection(i)
-                edtPackage.setText(appPackages[i]) // Tự điền vào ô text
+                edtPackage.setText(appPackages[i])
                 break
             }
         }
@@ -156,29 +153,49 @@ class MainActivity : AppCompatActivity() {
         startOverlayAndGame(selectedPackage)
     }
 
+    // 🌟 HÀM MỞ GAME "BẤT CHẤP" MỌI THỂ LOẠI APP ẨN
     private fun startOverlayAndGame(gamePackage: String) {
-        val launchIntent = packageManager.getLaunchIntentForPackage(gamePackage)
+        var launchIntent: Intent? = packageManager.getLaunchIntentForPackage(gamePackage)
         
+        // Nếu getLaunchIntentForPackage thất bại, quét sâu vào bên trong app để tìm Activity chính
         if (launchIntent == null) {
-            // Thử mở bằng lệnh của hệ thống nếu getLaunchIntentForPackage thất bại (Dành cho app ẩn)
-            val intent = Intent().apply {
-                setClassName(gamePackage, "")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
             try {
-                startActivity(intent)
-            } catch (e: Exception) {
-                Toast.makeText(this, "Package không tồn tại hoặc không thể mở!", Toast.LENGTH_LONG).show()
-                return
-            }
-        } else {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(launchIntent)
+                val pkgInfo = packageManager.getPackageInfo(gamePackage, PackageManager.GET_ACTIVITIES)
+                if (pkgInfo.activities != null && pkgInfo.activities.isNotEmpty()) {
+                    // Lấy Activity đầu tiên hoặc Activity có chứa tên package
+                    val mainActivity = pkgInfo.activities[0]
+                    launchIntent = Intent().apply {
+                        setClassName(gamePackage, mainActivity.name)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                }
+            } catch (e: Exception) { }
         }
 
-        val serviceIntent = Intent(this, OverlayService::class.java)
-        ContextCompat.startForegroundService(this, serviceIntent)
-        
-        finishAffinity()
+        // Nếu vẫn thất bại, dùng Intent ACTION_MAIN
+        if (launchIntent == null) {
+            launchIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                setPackage(gamePackage)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+
+        // Tiến hành mở
+        if (launchIntent != null) {
+            try {
+                startActivity(launchIntent)
+                
+                // Bật nút nổi lên
+                val serviceIntent = Intent(this, OverlayService::class.java)
+                ContextCompat.startForegroundService(this, serviceIntent)
+                
+                finishAffinity()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Tìm thấy App nhưng không thể mở. Sếp thử mở Game bằng tay trước nhé!", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            Toast.makeText(this, "Sai tên Package hoặc Game đã bị xóa!", Toast.LENGTH_LONG).show()
+        }
     }
 }
